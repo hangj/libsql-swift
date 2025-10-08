@@ -67,12 +67,13 @@ public extension Prepareable {
     }
 }
 
-extension String? {
+extension Optional where Wrapped == String {
     func withCString<Result>(_ body: (UnsafePointer<Int8>?) throws -> Result) rethrows -> Result {
-        if self == nil {
+        switch self {
+        case .none:
             return try body(nil)
-        } else {
-            return try self!.withCString(body)
+        case .some(let value):
+            return try value.withCString(body)
         }
     }
 }
@@ -226,7 +227,7 @@ public class Statement {
                     let bind = libsql_statement_bind_named(
                         self.inner,
                         name,
-                        libsql_blob(slice.baseAddress, slice.count)
+                        libsql_blob(slice.baseAddress?.assumingMemoryBound(to: UInt8.self), slice.count)
                     )
                     try errIf(bind.err)
                 }
@@ -273,7 +274,7 @@ public class Statement {
                 try slice.withUnsafeBytes { slice in
                     let bind = libsql_statement_bind_value(
                         self.inner,
-                        libsql_blob(slice.baseAddress, slice.count)
+                        libsql_blob(slice.baseAddress?.assumingMemoryBound(to: UInt8.self), slice.count)
                     )
                     try errIf(bind.err)
                 }
@@ -295,12 +296,17 @@ public class Statement {
 
 public class Transaction: Prepareable {
     var inner: libsql_transaction_t
+    var consumed = false
     
-    public consuming func commit() {
+    public func commit() {
+        if consumed { return }
+        consumed = true
         libsql_transaction_commit(self.inner)
     }
     
-    public consuming func rollback() {
+    public func rollback() {
+        if consumed { return }
+        consumed = true
         libsql_transaction_rollback(self.inner)
     }
 
